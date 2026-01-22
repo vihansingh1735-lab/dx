@@ -23,6 +23,11 @@ const TOKEN = process.env.TOKEN;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const PREFIX = "!";
 
+if (!OPENAI_KEY) {
+  console.error("❌ OPENAI_API_KEY missing");
+  process.exit(1);
+}
+
 // ================= AI SETUP =================
 const openai = new OpenAI({
   apiKey: OPENAI_KEY
@@ -37,37 +42,43 @@ const client = new Client({
   ]
 });
 
-// ================= STORAGE (MEMORY) =================
+// ================= MEMORY STORAGE =================
 const aiChannels = {}; // guildId => channelId
 
 // ================= READY =================
 client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  client.user.setActivity("AI Support", { type: ActivityType.Listening });
+  console.log(`🤖 AI logged in as ${client.user.tag}`);
+  client.user.setActivity("Emergency Hamburg RP", {
+    type: ActivityType.Listening
+  });
 });
 
 // ================= AI FUNCTION =================
-async function getAIReply(message) {
+async function getAIReply(userMessage) {
   try {
-    const completion = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content:
-            "You are a calm, friendly Gen-Z AI assistant. You help with Roblox Emergency Hamburg RP, life advice, and general chill conversations. If a question is unsafe or unclear, politely refuse."
+            "You are a friendly Gen-Z AI assistant for a Roblox Emergency Hamburg RP community. " +
+            "You help with RP rules, police/fire/EMS guidance, chill conversations, and light personal advice. " +
+            "If a message is meaningless, too short, or unclear, politely ask for clarification. " +
+            "Never act as staff. Never moderate."
         },
         {
           role: "user",
-          content: message
+          content: userMessage
         }
-      ]
+      ],
+      temperature: 0.7
     });
 
-    return completion.choices[0].message.content;
+    return response.choices[0].message.content;
   } catch (err) {
     console.error("AI Error:", err.message);
-    return "I can’t reply regarding this right now. Please wait for staff assistance.";
+    return "🤖 I can’t reply to that right now. Please try again in a moment.";
   }
 }
 
@@ -75,9 +86,9 @@ async function getAIReply(message) {
 client.on("messageCreate", async msg => {
   if (!msg.guild || msg.author.bot) return;
 
-  const content = msg.content;
+  const content = msg.content.trim();
 
-  // -------- SET AI CHANNEL (ADMIN) --------
+  // -------- SET AI CHANNEL --------
   if (content.startsWith(`${PREFIX}setaichannel`)) {
     if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return msg.reply("❌ Admin only.");
@@ -91,30 +102,35 @@ client.on("messageCreate", async msg => {
       embeds: [
         new EmbedBuilder()
           .setColor(0x2ecc71)
-          .setTitle("✅ AI Channel Set")
+          .setTitle("✅ AI Channel Configured")
           .setDescription(`AI will now reply in ${ch}`)
       ]
     });
   }
 
   // -------- AI AUTO REPLY --------
-  if (aiChannels[msg.guild.id] === msg.channel.id) {
-    msg.channel.sendTyping();
+  if (aiChannels[msg.guild.id] !== msg.channel.id) return;
 
-    const reply = await getAIReply(content);
+  // Ignore commands & junk
+  if (content.startsWith(PREFIX)) return;
+  if (content.length < 3) return;
 
-    return msg.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x5865f2)
-          .setAuthor({
-            name: "AI Assistant",
-            iconURL: client.user.displayAvatarURL()
-          })
-          .setDescription(reply)
-      ]
-    });
-  }
+  await msg.channel.sendTyping();
+
+  const reply = await getAIReply(content);
+
+  return msg.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setAuthor({
+          name: "AI Assistant",
+          iconURL: client.user.displayAvatarURL()
+        })
+        .setDescription(reply)
+        .setFooter({ text: "Emergency Hamburg RP AI" })
+    ]
+  });
 });
 
 // ================= LOGIN =================
