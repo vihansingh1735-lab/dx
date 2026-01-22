@@ -19,22 +19,21 @@ const OpenAI = require("openai");
 
 // ================= CONFIG =================
 const TOKEN = process.env.TOKEN;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const PREFIX = "!";
 
 if (!TOKEN) {
   console.error("❌ TOKEN missing");
   process.exit(1);
 }
-
-if (!OPENAI_API_KEY) {
+if (!OPENAI_KEY) {
   console.error("❌ OPENAI_API_KEY missing");
   process.exit(1);
 }
 
 // ================= OPENAI =================
 const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY
+  apiKey: OPENAI_KEY
 });
 
 // ================= CLIENT =================
@@ -52,7 +51,7 @@ const aiChannels = {}; // guildId => channelId
 // ================= READY =================
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  client.user.setActivity("Emergency Hamburg RP", {
+  client.user.setActivity("Emergency Hamburg RP AI", {
     type: ActivityType.Listening
   });
 });
@@ -60,15 +59,15 @@ client.once("ready", () => {
 // ================= AI FUNCTION =================
 async function getAIReply(userMessage) {
   try {
-    console.log("🧠 Sending to OpenAI:", userMessage);
-
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
         {
           role: "system",
           content:
-            "You are a chill Gen-Z AI chatbot. You help with Emergency Hamburg Roblox RP, personal life advice, and casual friendly chat. Keep replies short and natural."
+            "You are a friendly Gen-Z AI chatbot for Emergency Hamburg Roblox RP. " +
+            "You also help with chill conversations and basic life advice. " +
+            "Keep replies short, friendly, and human-like."
         },
         {
           role: "user",
@@ -77,19 +76,10 @@ async function getAIReply(userMessage) {
       ]
     });
 
-    console.log("✅ OpenAI response received");
-
-    const text = response.output_text;
-
-    if (!text) {
-      console.error("❌ Empty AI response");
-      return "I didn’t get that properly, try again.";
-    }
-
-    return text;
+    return res.choices[0]?.message?.content || "Hmm… I didn’t get that 😅";
   } catch (err) {
-    console.error("❌ OPENAI ERROR:", err);
-    return "AI is having issues right now, try again later.";
+    console.error("❌ OpenAI Error:", err);
+    return "⚠️ AI is having issues right now. Try again in a bit.";
   }
 }
 
@@ -99,7 +89,7 @@ client.on("messageCreate", async msg => {
 
   const content = msg.content.trim();
 
-  // ---------- SET AI CHANNEL ----------
+  // -------- SET AI CHANNEL --------
   if (content.startsWith(`${PREFIX}setaichannel`)) {
     if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return msg.reply("❌ Admin only.");
@@ -108,15 +98,16 @@ client.on("messageCreate", async msg => {
     if (!ch) return msg.reply("❌ Mention a channel.");
 
     aiChannels[msg.guild.id] = ch.id;
-    return msg.reply(`✅ AI chat enabled in ${ch}`);
+    return msg.reply(`✅ AI will now reply in ${ch}`);
   }
 
-  // ---------- AI CHAT (NORMAL MESSAGES) ----------
+  // -------- AI AUTO CHAT --------
   if (aiChannels[msg.guild.id] === msg.channel.id) {
-    msg.channel.sendTyping();
+    await msg.channel.sendTyping();
 
     const reply = await getAIReply(content);
 
+    // NORMAL TEXT REPLY (NO EMBED)
     return msg.reply(reply);
   }
 });
