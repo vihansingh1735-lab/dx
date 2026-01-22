@@ -28,7 +28,7 @@ if (!OPENAI_KEY) {
   process.exit(1);
 }
 
-// ================= AI SETUP =================
+// ================= OPENAI =================
 const openai = new OpenAI({
   apiKey: OPENAI_KEY
 });
@@ -42,7 +42,7 @@ const client = new Client({
   ]
 });
 
-// ================= MEMORY STORAGE =================
+// ================= STORAGE =================
 const aiChannels = {}; // guildId => channelId
 
 // ================= READY =================
@@ -53,32 +53,28 @@ client.once("ready", () => {
   });
 });
 
-// ================= AI FUNCTION =================
+// ================= AI FUNCTION (FIXED) =================
 async function getAIReply(userMessage) {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
         {
           role: "system",
           content:
-            "You are a friendly Gen-Z AI assistant for a Roblox Emergency Hamburg RP community. " +
-            "You help with RP rules, police/fire/EMS guidance, chill conversations, and light personal advice. " +
-            "If a message is meaningless, too short, or unclear, politely ask for clarification. " +
-            "Never act as staff. Never moderate."
+            "You are a chill Gen-Z AI chatbot. You help with Emergency Hamburg Roblox RP, casual life advice, and friendly conversations. Keep replies short, natural, and human."
         },
         {
           role: "user",
           content: userMessage
         }
-      ],
-      temperature: 0.7
+      ]
     });
 
-    return response.choices[0].message.content;
+    return response.output_text;
   } catch (err) {
-    console.error("AI Error:", err.message);
-    return "🤖 I can’t reply to that right now. Please try again in a moment.";
+    console.error("❌ OpenAI Error:", err.message);
+    return "🤖 I’m having a small brain lag 😭 try again in a sec.";
   }
 }
 
@@ -86,7 +82,7 @@ async function getAIReply(userMessage) {
 client.on("messageCreate", async msg => {
   if (!msg.guild || msg.author.bot) return;
 
-  const content = msg.content.trim();
+  const content = msg.content;
 
   // -------- SET AI CHANNEL --------
   if (content.startsWith(`${PREFIX}setaichannel`)) {
@@ -108,29 +104,27 @@ client.on("messageCreate", async msg => {
     });
   }
 
-  // -------- AI AUTO REPLY --------
-  if (aiChannels[msg.guild.id] !== msg.channel.id) return;
+  // -------- AI AUTO CHAT --------
+  if (aiChannels[msg.guild.id] === msg.channel.id) {
+    if (content.length < 2) return;
 
-  // Ignore commands & junk
-  if (content.startsWith(PREFIX)) return;
-  if (content.length < 3) return;
+    await msg.channel.sendTyping();
 
-  await msg.channel.sendTyping();
+    const reply = await getAIReply(content);
 
-  const reply = await getAIReply(content);
-
-  return msg.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setAuthor({
-          name: "AI Assistant",
-          iconURL: client.user.displayAvatarURL()
-        })
-        .setDescription(reply)
-        .setFooter({ text: "Emergency Hamburg RP AI" })
-    ]
-  });
+    return msg.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setAuthor({
+            name: "AI Assistant",
+            iconURL: client.user.displayAvatarURL()
+          })
+          .setDescription(reply)
+          .setFooter({ text: "Emergency Hamburg RP AI" })
+      ]
+    });
+  }
 });
 
 // ================= LOGIN =================
