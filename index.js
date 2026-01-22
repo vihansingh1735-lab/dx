@@ -1,31 +1,34 @@
-// ===================== ENV =====================
-require("dotenv").config();
-
-// ===================== KEEP ALIVE (RENDER) =====================
+// ================= KEEP ALIVE (RENDER) =================
 const express = require("express");
 const app = express();
 app.get("/", (_, res) => res.send("AI Bot Alive"));
 app.listen(process.env.PORT || 3000);
 
-// ===================== IMPORTS =====================
+// ================= ENV =================
+require("dotenv").config();
+
+// ================= IMPORTS =================
 const {
   Client,
   GatewayIntentBits,
+  PermissionsBitField,
+  EmbedBuilder,
   ActivityType
 } = require("discord.js");
 
 const OpenAI = require("openai");
 
-// ===================== CONFIG =====================
+// ================= CONFIG =================
 const TOKEN = process.env.TOKEN;
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const PREFIX = "!";
 
-// ===================== OPENAI =====================
+// ================= AI SETUP =================
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: OPENAI_KEY
 });
 
-// ===================== CLIENT =====================
+// ================= CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -34,91 +37,85 @@ const client = new Client({
   ]
 });
 
-// ===================== AI BRAIN =====================
-const SYSTEM_PROMPT = `
-You are an AI assistant for the Roblox Emergency Hamburg community.
+// ================= STORAGE (MEMORY) =================
+const aiChannels = {}; // guildId => channelId
 
-Personality:
-- Calm, friendly, Gen-Z chill (not cringe)
-- Respectful and supportive
-- Short clear replies unless user asks for detail
+// ================= READY =================
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+  client.user.setActivity("AI Support", { type: ActivityType.Listening });
+});
 
-Responsibilities:
-1. Help with Emergency Hamburg Roblox:
-   - RP guidance
-   - Emergency procedures (roleplay only)
-   - Rank & test help
-2. Answer server-related questions
-3. Give chill personal-life advice (non-medical)
-4. Refuse unsafe / rule-breaking requests politely
-
-Rules:
-- Never help break Roblox or Discord rules
-- Never give real-life emergency instructions
-- If unsure, say you can’t help but offer a related safe topic
-
-Tone examples:
-- "Got you."
-- "That’s valid honestly."
-- "Let’s break it down real quick."
-`;
-
-// ===================== AI FUNCTION =====================
+// ================= AI FUNCTION =================
 async function getAIReply(message) {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: message }
-    ]
-  });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a calm, friendly Gen-Z AI assistant. You help with Roblox Emergency Hamburg RP, life advice, and general chill conversations. If a question is unsafe or unclear, politely refuse."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ]
+    });
 
-  return completion.choices[0].message.content;
+    return completion.choices[0].message.content;
+  } catch (err) {
+    console.error("AI Error:", err.message);
+    return "I can’t reply regarding this right now. Please wait for staff assistance.";
+  }
 }
 
-// ===================== READY =====================
-client.once("ready", () => {
-  console.log(`🤖 AI Online as ${client.user.tag}`);
-  client.user.setActivity("Emergency Hamburg RP", {
-    type: ActivityType.Listening
-  });
-});
-
-// ===================== MESSAGE HANDLER =====================
+// ================= MESSAGE HANDLER =================
 client.on("messageCreate", async msg => {
-  if (msg.author.bot || !msg.guild) return;
-  if (!msg.content.startsWith(PREFIX)) return;
+  if (!msg.guild || msg.author.bot) return;
 
-  const [cmd, ...args] = msg.content.slice(1).trim().split(/ +/);
+  const content = msg.content;
 
-  // ===================== AI COMMAND =====================
-  if (cmd === "ai") {
-    const question = args.join(" ");
-    if (!question)
-      return msg.reply("Ask something after `!ai`");
+  // -------- SET AI CHANNEL (ADMIN) --------
+  if (content.startsWith(`${PREFIX}setaichannel`)) {
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return msg.reply("❌ Admin only.");
 
-    try {
-      await msg.channel.sendTyping();
-      const reply = await getAIReply(question);
-      return msg.reply(reply);
-    } catch (err) {
-      console.error(err);
-      return msg.reply("I couldn't reply right now. Try again later.");
-    }
+    const ch = msg.mentions.channels.first();
+    if (!ch) return msg.reply("❌ Mention a channel.");
+
+    aiChannels[msg.guild.id] = ch.id;
+
+    return msg.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle("✅ AI Channel Set")
+          .setDescription(`AI will now reply in ${ch}`)
+      ]
+    });
   }
 
-  // ===================== HELP =====================
-  if (cmd === "help") {
-    return msg.reply(
-      "**🧠 AI Commands**\n" +
-      "`!ai <message>` → Talk to AI\n\n" +
-      "**Examples:**\n" +
-      "`!ai how to pass moderation test`\n" +
-      "`!ai life feels stressful`\n" +
-      "`!ai police rp procedure`"
-    );
+  // -------- AI AUTO REPLY --------
+  if (aiChannels[msg.guild.id] === msg.channel.id) {
+    msg.channel.sendTyping();
+
+    const reply = await getAIReply(content);
+
+    return msg.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setAuthor({
+            name: "AI Assistant",
+            iconURL: client.user.displayAvatarURL()
+          })
+          .setDescription(reply)
+      ]
+    });
   }
 });
 
-// ===================== LOGIN =====================
+// ================= LOGIN =================
 client.login(TOKEN);
